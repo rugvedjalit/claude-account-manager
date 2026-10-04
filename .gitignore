@@ -1,0 +1,12 @@
+# Build output (binaries are published as GitHub release assets instead)
+dist/
+release/
+
+# Temp files the tool writes during an atomic replace
+*.cam-tmp
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
