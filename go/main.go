@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	toolVersion  = "2.0.0"
+	toolVersion  = "2.1.0"
 	testedClaude = "2.1.287"
 	maxSlots     = 9
 )
@@ -75,31 +75,34 @@ func main() {
 		}
 	}()
 
+	// Easy names first; older names still work so existing scripts and habits don't break.
 	switch cmd {
-	case "setup", "add":
+	case "setup", "start", "init":
 		cmdSetup(fl)
-	case "switch", "use":
+	case "add", "new":
+		cmdAdd(fl)
+	case "fetch", "save", "sync", "import":
+		cmdFetch(fl)
+	case "switch", "use", "change":
 		cmdSwitch(rest, fl)
-	case "status":
+	case "status", "whoami", "info":
 		cmdStatus()
-	case "list", "ls":
+	case "list", "ls", "accounts":
 		cmdList()
-	case "login":
+	case "login", "relogin", "signin":
 		cmdLogin(rest, fl)
-	case "remove", "rm":
-		cmdRemove(rest, fl)
-	case "rename":
+	case "delete", "remove", "rm":
+		cmdDelete(rest, fl)
+	case "rename", "name":
 		cmdRename(rest)
-	case "save", "sync":
-		cmdSave(fl)
-	case "test":
+	case "test", "check":
 		cmdTest()
-	case "version", "--version":
+	case "version", "--version", "-v":
 		fmt.Printf("claude-account %s (%s)\n", toolVersion, platformName())
 	case "help":
 		showHelp()
 	default:
-		fail(fmt.Sprintf("Unknown command '%s'.", cmd))
+		fail(fmt.Sprintf("'%s' is not a command I know.", cmd))
 		showHelp()
 		os.Exit(1)
 	}

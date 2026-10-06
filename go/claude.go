@@ -25,7 +25,7 @@ func resolveClaude() {
 	}
 	p, err := exec.LookPath("claude")
 	if err != nil {
-		die("Claude Code is not installed (no `claude` executable found on PATH).",
+		die("Claude Code is not installed (the `claude` command was not found).",
 			"Install it first: https://code.claude.com/docs/en/setup\nThen open a new terminal and run this command again.")
 	}
 	if abs, err := filepath.Abs(p); err == nil {
@@ -116,15 +116,15 @@ func assertClaudeSupported() {
 	resolveClaude()
 	r := runClaude([]string{"auth", "--help"}, nil, false)
 	if r.exit != 0 || !strings.Contains(r.out, "login") || !strings.Contains(r.out, "status") {
-		die(fmt.Sprintf("Claude Code %s is not supported: it has no 'claude auth login/status' commands.", claudeVersion),
-			fmt.Sprintf("Update Claude Code (tested with %s) and try again.", testedClaude))
+		die(fmt.Sprintf("This Claude Code version (%s) can't be used: it has no 'claude auth' commands.", claudeVersion),
+			fmt.Sprintf("Update Claude Code and try again (this tool was tested with version %s).", testedClaude))
 	}
 	if st := getAuthStatus(""); st != nil && st.ConfigDirectory != "" {
 		adoptConfigDir(st.ConfigDirectory)
 	}
 	if claudeVersion != "unknown" {
 		if major(claudeVersion) != major(testedClaude) {
-			warn(fmt.Sprintf("Claude Code %s detected; this tool was verified against %s. The credential layout may differ.", claudeVersion, testedClaude))
+			warn(fmt.Sprintf("You have Claude Code %s, but this tool was tested with %s. It will probably work, but check with: claude-account test", claudeVersion, testedClaude))
 		}
 	}
 }
@@ -169,8 +169,8 @@ func claudeRunningPIDs() []int {
 // assertNotRunning refuses to swap logins underneath a running Claude Code session.
 func assertNotRunning(force bool) {
 	if os.Getenv("CLAUDECODE") != "" && !force {
-		die("You are running this from inside a Claude Code session.",
-			"Exit Claude Code first, then run the command from a normal terminal.\n(Use --force to override.)")
+		die("You are running this from inside Claude Code.",
+			"Close Claude Code first, then run this again in a normal terminal.\n(Add --yes to skip this check.)")
 	}
 	pids := claudeRunningPIDs()
 	if len(pids) > 0 && !force {
@@ -178,11 +178,11 @@ func assertNotRunning(force bool) {
 		for _, p := range pids {
 			ps = append(ps, strconv.Itoa(p))
 		}
-		warn(fmt.Sprintf("Claude Code appears to be running (PID %s).", strings.Join(ps, ", ")))
-		fmt.Println("  A running session keeps its old login in memory and may write it back when it refreshes its token.")
-		if !yesNo("  Switch anyway?", false) {
+		warn(fmt.Sprintf("Claude Code is still open (process %s).", strings.Join(ps, ", ")))
+		fmt.Println("  If it stays open, it may quietly switch you back to the old account.")
+		if !yesNo("  Change account anyway?", false) {
 			fmt.Println()
-			fmt.Println("Aborted. Exit Claude Code and try again.")
+			fmt.Println("Cancelled. Close Claude Code and try again.")
 			os.Exit(2)
 		}
 	}

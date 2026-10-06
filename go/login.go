@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type capturedLogin struct {
@@ -42,14 +41,14 @@ func isolatedLogin(email string) (*capturedLogin, error) {
 	}
 	r := runClaude(args, map[string]string{"CLAUDE_CONFIG_DIR": dir}, true)
 	if r.exit != 0 {
-		return nil, fmt.Errorf("Claude Code login did not complete (exit code %d)", r.exit)
+		return nil, fmt.Errorf("sign-in was not finished (Claude exited with code %d)", r.exit)
 	}
 	credText, err := isolatedCredentials(dir)
 	if err != nil {
 		return nil, err
 	}
 	if parseCredentials(credText) == nil {
-		return nil, errors.New("Claude Code wrote credentials in an unrecognized format")
+		return nil, errors.New("Claude saved the login in a format this tool doesn't recognize")
 	}
 	oauthJSON := ""
 	if b, err := os.ReadFile(filepath.Join(dir, ".claude.json")); err == nil {
@@ -65,17 +64,7 @@ func isolatedLogin(email string) (*capturedLogin, error) {
 		}
 	}
 	if parseProfile(oauthJSON) == nil {
-		return nil, errors.New("login finished but the account profile (email) could not be read")
+		return nil, errors.New("sign-in finished, but the account email couldn't be read")
 	}
 	return &capturedLogin{Credentials: credText, OAuthJSON: oauthJSON}, nil
-}
-
-func loginHint() []string {
-	return []string{
-		"  A browser window will open for the Claude login flow.",
-		"  If the browser is already signed in to claude.ai with an account you have saved,",
-		"  use a private/incognito window or sign out there first.",
-		"  If the browser shows a code instead of returning, paste it at the prompt.",
-		strings.Repeat("", 0),
-	}
 }

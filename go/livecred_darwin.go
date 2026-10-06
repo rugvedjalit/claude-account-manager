@@ -59,7 +59,7 @@ func readLiveCredentials() (text, source string, err error) {
 	}
 	b, e := os.ReadFile(liveCredPath)
 	if e != nil {
-		return "", "", errors.New("no login in Keychain or credentials file")
+		return "", "", errors.New("no login found in the Keychain or the login file")
 	}
 	return string(b), "file", nil
 }
@@ -86,7 +86,7 @@ func isolatedCredentials(dir string) (string, error) {
 	}
 	b, err := os.ReadFile(filepath.Join(dir, ".credentials.json"))
 	if err != nil {
-		return "", errors.New("login finished but no credentials were found in the Keychain or the credentials file")
+		return "", errors.New("sign-in finished, but no login was found in the Keychain or the login file")
 	}
 	return string(b), nil
 }

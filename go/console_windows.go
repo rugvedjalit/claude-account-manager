@@ -8,10 +8,10 @@ import (
 )
 
 var (
-	kernel32DLL              = syscall.NewLazyDLL("kernel32.dll")
-	procGetConsoleMode       = kernel32DLL.NewProc("GetConsoleMode")
-	procSetConsoleMode       = kernel32DLL.NewProc("SetConsoleMode")
-	procSetConsoleOutputCP   = kernel32DLL.NewProc("SetConsoleOutputCP")
+	kernel32DLL            = syscall.NewLazyDLL("kernel32.dll")
+	procGetConsoleMode     = kernel32DLL.NewProc("GetConsoleMode")
+	procSetConsoleMode     = kernel32DLL.NewProc("SetConsoleMode")
+	procSetConsoleOutputCP = kernel32DLL.NewProc("SetConsoleOutputCP")
 )
 
 // initConsole turns on ANSI colour handling and UTF-8 output in the Windows console.

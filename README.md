@@ -67,7 +67,7 @@ claude-account switch 2
 
 - **No wrapper around `claude`.** The real binary reads the live login at startup, so after a switch it simply is the other account.
 - **The second account is logged in without logging out the first.** `setup` runs `claude auth login` with `CLAUDE_CONFIG_DIR` pointed at a throw-away folder, captures the result, encrypts it, and scrubs the folder (and on macOS deletes the temporary Keychain item). `claude auth logout` is never called.
-- **Refreshed tokens are not lost.** Every `switch`, `status` and `save` first copies the live login back into its slot, matched by account UUID.
+- **Refreshed tokens are not lost.** Every `switch`, `status` and `fetch` first copies the live login back into its slot, matched by account UUID.
 - **`~/.claude.json` is never re-serialized.** A small JSON scanner replaces exactly the `oauthAccount` value. The result is validated before an atomic write, and the previous file is backed up.
 
 Store location: `%LOCALAPPDATA%\claude-account` (Windows), `~/Library/Application Support/claude-account` (macOS), `$XDG_CONFIG_HOME/claude-account` or `~/.config/claude-account` (Linux). Override with `CLAUDE_ACCOUNT_HOME`.
@@ -120,7 +120,7 @@ Uninstall: `install.ps1 -Uninstall` or `bash install.sh --uninstall`. Add `-Purg
 
 ## D. First-time setup
 
-With Claude Code **not running**:
+Close Claude Code first, then run:
 
 ```
 claude-account setup
@@ -130,73 +130,82 @@ claude-account setup
 Claude Account Manager - Setup
 ------------------------------
 
-Claude Code 2.1.287 detected at /home/you/.local/bin/claude
-Config directory: /home/you/.claude
-Saved accounts are protected by: Linux Secret Service via secret-tool
+Claude Code 2.1.291 found at /home/you/.local/bin/claude
+Claude's settings folder: /home/you/.claude
+Saved accounts are kept in: your Linux keyring (Secret Service)
 
 Step 1: Account 1
-  You are currently logged in to Claude Code as you@work.com.
-  Save this login as Account 1? [Y/n]: y
+  Claude is signed in to you@work.com right now.
+  Save this account as Account 1? [Y/n]: y
 ✓ Account 1 saved (you@work.com)
 
 Do you want to add another Claude account? [Y/n]: y
 
-Step: Account 2
-  A browser window will open for the Claude login flow.
-  Sign in with the OTHER account. If the browser is already signed in to claude.ai
-  with an account you have saved, use a private/incognito window or sign out there first.
-  If the browser shows a code instead of returning, paste it at the prompt.
-  Your current Claude Code login is NOT touched by this step.
-  Press Enter to open the login:
+Adding Account 2
+  Your browser will open the normal Claude sign-in page.
+  Sign in with the NEW account. If the browser signs you in to an account you
+  already saved, use a private/incognito window or sign out on claude.ai first.
+  If the browser shows a code instead of coming back here, paste it below.
+  The account you're using now stays signed in.
+  Press Enter to open the sign-in page:
 
-  ... Claude Code's own login output: URL, browser, "Paste code here if prompted" ...
+  ... Claude's own sign-in: link, browser, "Paste code here if prompted" ...
 
 ✓ Account 2 saved (you@personal.com)
 
 Do you want to add another Claude account? [y/N]: n
 
-✓ Setup complete.
+✓ All set.
 ```
 
-If Claude Code is not logged in at all, step 1 runs the normal login first. Signing in with the same account twice refreshes the existing slot instead of creating a duplicate. Re-run `setup` any time to add more accounts (up to 9).
-
-If you logged in to a new account with `claude auth login` or `/login` yourself, run `claude-account save` and it is added as the next slot.
+- **Not signed in to Claude yet?** Step 1 opens the normal Claude sign-in first.
+- **Signed in to the same account twice?** The tool notices and just updates it, so you never get duplicates.
+- **Want more accounts later?** Run `claude-account add`. You can save up to 9.
+- **Already signed in to an account with `/login`?** Run `claude-account fetch` to fetch that account and save it.
 
 ## E. Daily usage
 
 ```
-claude                       # works as the active account
+claude                       # opens Claude Code with the account in use
 ```
 
-When the active account hits its usage limit:
+When the account in use hits its usage limit:
 
 ```
-1. exit Claude Code
-2. claude-account switch        (or: claude-account switch 2 / claude-account switch Personal)
+1. Close Claude Code
+2. claude-account switch        (or straight away: claude-account switch 2 / claude-account switch Work)
 
-   Current account: Account 1
+   Using now: Account 1 (you@work.com)
 
-   [1] Account 1  you@work.com (active)
+   [1] Account 1  you@work.com  (using now)
    [2] Account 2  you@personal.com
 
-   Select account: 2
+   Type the number of the account to use (or press Enter to cancel): 2
    ✓ Switched to Account 2 (you@personal.com)
 
-3. claude --resume              # same project folder, pick the session, keep working
+3. claude --resume              # same project folder, pick the chat, keep working
 ```
 
-| Command | Purpose |
-|---|---|
-| `claude-account` | Help, with the current account and saved list at the top |
-| `claude-account status` | Active account, each slot's state and refresh-token validity |
-| `claude-account list` | Compact list, `*` marks the active one |
-| `claude-account save` | Save the live login: refresh its slot, or add it as a new account |
-| `claude-account login 2` | Re-authenticate a slot in the browser (after expiry) |
-| `claude-account rename 2 Personal` | Name a slot; names work in `switch` |
-| `claude-account remove 2` | Forget a slot (does not log the live session out) |
-| `claude-account test` | Send one tiny prompt to confirm the active account works |
+### All commands
 
-Options: `--force` / `-y` skips confirmations, `--email you@example.com` pre-fills the login page.
+| Command | What it does |
+|---|---|
+| `claude-account` | Shows help, with the account in use and your saved accounts at the top |
+| `claude-account setup` | First time? Start here. Saves your account and lets you add more |
+| `claude-account add` | Add a new account (opens the browser to sign in) |
+| `claude-account fetch` | Fetch the account Claude is signed in to now and save it |
+| `claude-account switch` | Change to another account (shows a list) |
+| `claude-account switch 2` | Change straight to account 2 (a name works too) |
+| `claude-account list` | Show all saved accounts (`*` marks the one in use) |
+| `claude-account status` | See which account is in use and how long each login lasts |
+| `claude-account rename 2 Work` | Give an account an easy name |
+| `claude-account delete 2` | Delete an account from the saved list (Claude stays signed in) |
+| `claude-account login 2` | Sign in to an account again when its login has run out |
+| `claude-account test` | Check the account in use works (sends one tiny message) |
+
+Extra options: `--yes` (or `-y`) skips "are you sure?" questions, and `--email you@example.com` fills in the email on the sign-in page.
+
+Older command names from earlier versions still work: `save`/`sync` (now `fetch`), `remove`/`rm` (now `delete`), `use` (now `switch`), and `--force` (now `--yes`).
 
 ## F. Security
 
@@ -216,8 +225,8 @@ Options: `--force` / `-y` skips confirmations, `--email you@example.com` pre-fil
 
 - **Multiple accounts sharing one session history is not an official feature.** Anthropic's documented way to use two accounts is a separate `CLAUDE_CONFIG_DIR` per account, which gives each account its own session history. That is exactly what this tool avoids, so that `claude --resume` sees the same sessions under both accounts. The credential JSON layout, the `oauthAccount` key, and the Keychain naming scheme are observed behaviour, not documented API. The tool validates the layout before every switch and refuses (backups intact) if it changes.
 - **macOS is implemented from the binary's own scheme but untested on a Mac.** First run `claude-account status` and `claude-account setup`, then `claude-account test`; if anything looks off, `claude auth login` always restores a normal login.
-- **Refresh tokens expire when unused** (about 16 to 30 days after last use, as observed). `status` shows the remaining validity and warns at 3 days; `claude-account login N` fixes an expired slot.
-- **Exit Claude Code before switching.** A running session can write its old login back when it refreshes. The tool refuses inside a Claude Code shell and warns if a `claude` process is running (`--force` overrides). It cannot see Claude Code hosted by Node (npm installs).
+- **Refresh tokens expire when unused** (about 16 to 30 days after last use, as observed). `status` shows the remaining validity and warns at 3 days; `claude-account login N` signs that account in again.
+- **Exit Claude Code before switching.** A running session can write its old login back when it refreshes. The tool refuses inside a Claude Code shell and warns if a `claude` process is running (`--yes` skips the check). It cannot see Claude Code hosted by Node (npm installs).
 - **Plan limits are per account.** Nothing here pools usage.
 - **The old PowerShell version** in `legacy-powershell/` still works on Windows and shares the same store format, but is no longer the recommended install.
 

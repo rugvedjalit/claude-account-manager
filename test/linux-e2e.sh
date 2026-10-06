@@ -20,7 +20,7 @@ export CLAUDE_CONFIG_DIR=/root/cfgA
 echo "##### version"; claude-account version
 echo "##### auth status sees fake login?"; claude auth status --json | grep -E 'loggedIn|email'
 echo "##### setup (y,n)"; printf 'y\nn\n' | claude-account setup; echo "exit=$?"
-echo "##### save bob from cfgB"; CLAUDE_CONFIG_DIR=/root/cfgB claude-account save --force; echo "exit=$?"
+echo "##### save bob from cfgB"; CLAUDE_CONFIG_DIR=/root/cfgB claude-account fetch --yes; echo "exit=$?"
 echo "##### status"; claude-account status; echo "exit=$?"
 echo "##### switch 2"; claude-account switch 2 --force; echo "exit=$?"
 echo "live creds: $(grep -o 'sk-ant-ort01-[A-Z]*' /root/cfgA/.credentials.json)  perms: $(stat -c %a /root/cfgA/.credentials.json)"
@@ -30,6 +30,6 @@ echo "##### menu -> 1"; printf '1\n' | claude-account switch --force; echo "exit
 echo "live creds: $(grep -o 'sk-ant-ort01-[A-Z]*' /root/cfgA/.credentials.json)"
 echo "##### running-process guard (claude running in background, answer n)"; (claude -p "wait" --max-turns 1 >/dev/null 2>&1 &); sleep 2
 printf 'n\n' | claude-account switch 2; echo "exit=$?"
-echo "##### rename/list/remove"; claude-account rename 2 Work; claude-account list; claude-account remove work --force; claude-account list
+echo "##### rename/list/remove"; claude-account rename 2 Work; claude-account list; claude-account delete work --yes; claude-account list
 echo "##### store layout"; find /root/store -type f -exec ls -la {} \;
 echo "##### no claude on PATH"; PATH=/usr/bin:/bin /usr/local/bin/claude-account status; echo "exit=$?"

@@ -9,13 +9,41 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Small wording helpers
+// ---------------------------------------------------------------------------
+
+// planName turns "max" into "Max plan".
+func planName(sub string) string {
+	if sub == "" {
+		return ""
+	}
+	return strings.ToUpper(sub[:1]) + sub[1:] + " plan"
+}
+
+// loginLife describes how long a saved login keeps working, in plain words.
+func loginLife(slot int, rx time.Time) (state, detail string) {
+	if rx.IsZero() {
+		return "ready", ""
+	}
+	left := time.Until(rx)
+	switch {
+	case left < 0:
+		return "LOGIN RAN OUT", fmt.Sprintf("ran out on %s - sign in again with: claude-account login %d", rx.Format("2006-01-02"), slot)
+	case left < 72*time.Hour:
+		return "ready", fmt.Sprintf("login runs out in %s - use this account soon, or run: claude-account login %d", formatLeft(left), slot)
+	default:
+		return "ready", fmt.Sprintf("login still good for %s", formatLeft(left))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // help
 // ---------------------------------------------------------------------------
 
 func helpSection(t string) { fmt.Println(); fmt.Println(paint(cYellow, t)) }
 
 func helpRow(cmd, desc, note string) {
-	line := "  " + paint(cCyan, fmt.Sprintf("%-34s", cmd)) + desc
+	line := "  " + paint(cCyan, fmt.Sprintf("%-32s", cmd)) + desc
 	if note != "" {
 		line += paint(cGray, "  "+note)
 	}
@@ -29,14 +57,14 @@ func showHelp() {
 		m := readManifest()
 		live := getLiveState()
 		cur, has := m.findByIdentity(live.Identity)
-		fmt.Print("Right now:  ")
+		fmt.Print("Using now:  ")
 		switch {
 		case has:
 			fmt.Print(paint(cGreen, fmt.Sprintf("%s (%s)", m.name(cur), live.Email)))
 		case live.HasCredentials:
-			fmt.Print(paint(cYellow, live.Email+" - not saved yet, run: claude-account save"))
+			fmt.Print(paint(cYellow, live.Email+" - not saved yet, run: claude-account fetch"))
 		default:
-			fmt.Print(paint(cYellow, "not logged in"))
+			fmt.Print(paint(cYellow, "not signed in"))
 		}
 		fmt.Println(paint(cGray, fmt.Sprintf("   |   Saved accounts: %d", len(m.slots()))))
 		for _, s := range m.slots() {
@@ -49,44 +77,47 @@ func showHelp() {
 	}()
 
 	helpSection("EVERY DAY")
-	helpRow("claude", "Start Claude Code with the active account", "(unchanged)")
-	helpRow("claude-account switch", "Pick another account from a menu", "(exit Claude Code first)")
-	helpRow("claude-account switch 2", "Switch straight to account 2 (or a name)", "")
-	helpRow("claude --resume", "Continue the same conversation on the new account", "")
+	helpRow("claude", "Open Claude Code with the account in use", "(nothing changes)")
+	helpRow("claude-account switch", "Change to another account (shows a list)", "(close Claude Code first)")
+	helpRow("claude-account switch 2", "Change straight to account 2 (a name works too)", "")
+	helpRow("claude --resume", "Carry on the same chat with the new account", "")
 
-	helpSection("ADD / REMOVE ACCOUNTS")
-	helpRow("claude-account setup", "First-time setup, or add another account via browser login", "")
-	helpRow("claude-account save", "Add the account Claude Code is logged in as right now", "(after /login)")
-	helpRow("claude-account remove 2", "Forget account 2", "")
-	helpRow("claude-account rename 2 Personal", "Name an account; then: claude-account switch Personal", "")
+	helpSection("ADD ACCOUNTS")
+	helpRow("claude-account setup", "First time? Start here. Saves your account and adds more", "")
+	helpRow("claude-account add", "Add a new account (opens the browser to sign in)", "")
+	helpRow("claude-account fetch", "Fetch the account Claude is signed in to now and save it", "(after /login)")
+
+	helpSection("MANAGE ACCOUNTS")
+	helpRow("claude-account list", "Show all saved accounts", "")
+	helpRow("claude-account rename 2 Work", "Give account 2 an easy name, then: claude-account switch Work", "")
+	helpRow("claude-account delete 2", "Delete account 2 from the saved list", "")
 
 	helpSection("CHECK / FIX")
-	helpRow("claude-account status", "Active account, saved accounts, when each login expires", "")
-	helpRow("claude-account list", "Short list of saved accounts", "")
-	helpRow("claude-account login 2", "Log account 2 in again", "(when status says EXPIRED)")
-	helpRow("claude-account test", "Send one tiny prompt to prove the active account works", "")
+	helpRow("claude-account status", "See which account is in use and how long each login lasts", "")
+	helpRow("claude-account login 2", "Sign in to account 2 again", "(when its login has run out)")
+	helpRow("claude-account test", "Check the account in use works (sends one tiny message)", "")
 
-	helpSection("OPTIONS")
-	helpRow("--force   (or -y)", "Skip confirmation questions", "")
-	helpRow("--email you@example.com", "Pre-fill the email on the login page", "(setup, login)")
+	helpSection("EXTRA OPTIONS")
+	helpRow("--yes   (or -y)", "Don't ask \"are you sure?\"", "")
+	helpRow("--email you@example.com", "Fill in the email on the sign-in page for you", "(setup, add, login)")
 
-	helpSection("EXAMPLE: account 1 hits its usage limit")
-	fmt.Println("  1. Exit Claude Code")
+	helpSection("EXAMPLE: account 1 has hit its usage limit")
+	fmt.Println("  1. Close Claude Code")
 	fmt.Println("  2. " + paint(cCyan, "claude-account switch") + "   and pick 2")
-	fmt.Println("  3. " + paint(cCyan, "claude --resume") + "         same conversation, now on account 2")
+	fmt.Println("  3. " + paint(cCyan, "claude --resume") + "         same chat, now on account 2")
 	fmt.Println()
 }
 
 // ---------------------------------------------------------------------------
-// setup
+// setup / add / fetch
 // ---------------------------------------------------------------------------
 
 func saveLiveAsNewSlot(m *manifest, live *liveState, fl flags) (int, bool) {
 	next, free := m.nextFreeSlot()
 	if !free {
-		die(fmt.Sprintf("All %d account slots are used.", maxSlots), "Remove one with: claude-account remove <n>")
+		die(fmt.Sprintf("You already have the most accounts allowed (%d).", maxSlots), "Delete one first with: claude-account delete <number>")
 	}
-	fmt.Printf("Claude Code is currently logged in as %s, which is not a saved account.\n", live.Email)
+	fmt.Printf("Claude is signed in to %s, which isn't saved yet.\n", live.Email)
 	if !fl.force && !yesNo(fmt.Sprintf("Save it as Account %d?", next), true) {
 		fmt.Println("Not saved.")
 		return 0, false
@@ -94,16 +125,51 @@ func saveLiveAsNewSlot(m *manifest, live *liveState, fl flags) (int, bool) {
 	saveSlot(m, next, live.CredentialsText, live.OAuthJSON, "")
 	m.setActive(next)
 	saveManifest(m)
-	ok(fmt.Sprintf("Account %d saved (%s) and marked active", next, live.Email))
+	ok(fmt.Sprintf("Fetched %s and saved it as Account %d. It's the account in use now.", live.Email, next))
 	return next, true
+}
+
+// addOneAccount opens the normal Claude sign-in for a new account without signing
+// out of the account in use, then saves it in the next free number.
+func addOneAccount(m *manifest, fl flags) bool {
+	next, free := m.nextFreeSlot()
+	if !free {
+		warn(fmt.Sprintf("You already have the most accounts allowed (%d). Delete one with: claude-account delete <number>", maxSlots))
+		return false
+	}
+	fmt.Println()
+	fmt.Println(paint(cBold, fmt.Sprintf("Adding Account %d", next)))
+	fmt.Println("  Your browser will open the normal Claude sign-in page.")
+	fmt.Println("  Sign in with the NEW account. If the browser signs you in to an account you")
+	fmt.Println("  already saved, use a private/incognito window or sign out on claude.ai first.")
+	fmt.Println("  If the browser shows a code instead of coming back here, paste it below.")
+	fmt.Println("  The account you're using now stays signed in.")
+	readLine("  Press Enter to open the sign-in page: ")
+	fmt.Println()
+	cap, err := isolatedLogin(fl.email)
+	if err != nil {
+		fail(err.Error())
+		fmt.Println()
+		return false
+	}
+	prof := parseProfile(cap.OAuthJSON)
+	if dup, found := m.findByIdentity(identityOf(prof)); found {
+		saveSlot(m, dup, cap.Credentials, cap.OAuthJSON, "")
+		warn(fmt.Sprintf("You already saved this account as %s (%s). Its login was updated instead of adding it twice.", m.name(dup), prof.Email))
+	} else {
+		saveSlot(m, next, cap.Credentials, cap.OAuthJSON, "")
+		ok(fmt.Sprintf("Account %d saved (%s)", next, prof.Email))
+	}
+	fmt.Println()
+	return true
 }
 
 func cmdSetup(fl flags) {
 	assertClaudeSupported()
 	title("Claude Account Manager - Setup")
-	fmt.Printf("Claude Code %s detected at %s\n", claudeVersion, claudeExe)
-	fmt.Printf("Config directory: %s\n", configDir)
-	fmt.Printf("Saved accounts are protected by: %s\n\n", secrets().Describe())
+	fmt.Printf("Claude Code %s found at %s\n", claudeVersion, claudeExe)
+	fmt.Printf("Claude's settings folder: %s\n", configDir)
+	fmt.Printf("Saved accounts are kept in: %s\n\n", secrets().Describe())
 
 	m := readManifest()
 	live := getLiveState()
@@ -112,39 +178,39 @@ func cmdSetup(fl flags) {
 		fmt.Println(paint(cBold, "Step 1: Account 1"))
 		switch {
 		case live.HasCredentials && live.Identity != "":
-			fmt.Printf("  You are currently logged in to Claude Code as %s.\n", live.Email)
-			if yesNo("  Save this login as Account 1?", true) {
+			fmt.Printf("  Claude is signed in to %s right now.\n", live.Email)
+			if yesNo("  Save this account as Account 1?", true) {
 				saveSlot(m, 1, live.CredentialsText, live.OAuthJSON, "")
 				m.setActive(1)
 				saveManifest(m)
 				ok(fmt.Sprintf("Account 1 saved (%s)", live.Email))
 			} else {
 				fmt.Println()
-				fmt.Println("  A browser window will open. Sign in with the account you want as Account 1.")
-				fmt.Println("  Your current Claude Code login will be replaced by it.")
+				fmt.Println("  Your browser will open. Sign in with the account you want as Account 1.")
+				fmt.Println("  Claude will then use that account instead of the current one.")
 				readLine("  Press Enter to continue: ")
 				cap, err := isolatedLogin(fl.email)
 				if err != nil {
-					die(err.Error(), "Run: claude-account setup   to try again.")
+					die(err.Error(), "Try again with: claude-account setup")
 				}
 				saveSlot(m, 1, cap.Credentials, cap.OAuthJSON, "")
 				if _, err := setLiveFromSlot(1); err != nil {
-					die("Saved Account 1 but could not activate it: "+err.Error(), "")
+					die("Account 1 was saved, but Claude couldn't be changed over to it: "+err.Error(), "")
 				}
 				m.setActive(1)
 				saveManifest(m)
-				ok(fmt.Sprintf("Account 1 saved and activated (%s)", parseProfile(cap.OAuthJSON).Email))
+				ok(fmt.Sprintf("Account 1 saved and in use (%s)", parseProfile(cap.OAuthJSON).Email))
 			}
 		default:
-			fmt.Println("  No Claude Code login found. Starting the normal Claude Code login flow...")
-			fmt.Println("  (a browser window will open; sign in with your FIRST account)")
+			fmt.Println("  Claude isn't signed in yet. Opening the normal Claude sign-in...")
+			fmt.Println("  (your browser will open; sign in with your FIRST account)")
 			fmt.Println()
 			if r := runClaude([]string{"auth", "login"}, nil, true); r.exit != 0 {
-				die("Claude Code login did not complete.", "Run: claude-account setup   to try again.")
+				die("Sign-in was not finished.", "Try again with: claude-account setup")
 			}
 			live = getLiveState()
 			if !live.HasCredentials {
-				die("Login finished but no credentials were written by Claude Code.", "Expected: "+liveCredentialDescription())
+				die("Sign-in finished, but Claude didn't save a login.", "Expected it here: "+liveCredentialDescription())
 			}
 			saveSlot(m, 1, live.CredentialsText, live.OAuthJSON, "")
 			m.setActive(1)
@@ -153,7 +219,7 @@ func cmdSetup(fl flags) {
 		}
 		fmt.Println()
 	} else {
-		fmt.Println("Already configured:")
+		fmt.Println("Accounts you already saved:")
 		for _, s := range m.slots() {
 			fmt.Printf("  [%d] %s  %s\n", s, m.name(s), m.entry(s).Email)
 		}
@@ -168,9 +234,8 @@ func cmdSetup(fl flags) {
 
 	first := true
 	for {
-		next, free := m.nextFreeSlot()
-		if !free {
-			warn(fmt.Sprintf("All %d account slots are used.", maxSlots))
+		if _, free := m.nextFreeSlot(); !free {
+			warn(fmt.Sprintf("You already have the most accounts allowed (%d).", maxSlots))
 			break
 		}
 		def := first && len(m.slots()) < 2
@@ -178,38 +243,47 @@ func cmdSetup(fl flags) {
 			break
 		}
 		first = false
-		fmt.Println()
-		fmt.Println(paint(cBold, fmt.Sprintf("Step: Account %d", next)))
-		fmt.Println("  A browser window will open for the Claude login flow.")
-		fmt.Println("  Sign in with the OTHER account. If the browser is already signed in to claude.ai")
-		fmt.Println("  with an account you have saved, use a private/incognito window or sign out there first.")
-		fmt.Println("  If the browser shows a code instead of returning, paste it at the prompt.")
-		fmt.Println("  Your current Claude Code login is NOT touched by this step.")
-		readLine("  Press Enter to open the login: ")
-		fmt.Println()
-		cap, err := isolatedLogin(fl.email)
-		if err != nil {
-			fail(err.Error())
-			fmt.Println()
-			continue
-		}
-		prof := parseProfile(cap.OAuthJSON)
-		if dup, found := m.findByIdentity(identityOf(prof)); found {
-			saveSlot(m, dup, cap.Credentials, cap.OAuthJSON, "")
-			warn(fmt.Sprintf("That is the same account as %s (%s). Its saved login was refreshed instead of adding a new account.", m.name(dup), prof.Email))
-		} else {
-			saveSlot(m, next, cap.Credentials, cap.OAuthJSON, "")
-			ok(fmt.Sprintf("Account %d saved (%s)", next, prof.Email))
-		}
-		fmt.Println()
+		addOneAccount(m, fl)
 	}
 
 	fmt.Println()
-	ok("Setup complete.")
+	ok("All set.")
 	fmt.Println()
 	showStatus(true)
 	fmt.Println()
 	fmt.Println("Next: just run `claude`. To change account: claude-account switch")
+}
+
+func cmdAdd(fl flags) {
+	assertClaudeSupported()
+	m := readManifest()
+	if len(m.slots()) == 0 {
+		// Nothing saved yet: the full setup saves the current account first.
+		cmdSetup(fl)
+		return
+	}
+	title("Claude Account Manager - Add an account")
+	if !addOneAccount(m, fl) {
+		os.Exit(1)
+	}
+	showStatus(true)
+}
+
+func cmdFetch(fl flags) {
+	assertClaudeSupported()
+	m := readManifest()
+	live := getLiveState()
+	if !live.HasCredentials || live.Identity == "" {
+		die("Claude isn't signed in to any account, so there is nothing to fetch.",
+			"Sign in first with: claude auth login\nThen run: claude-account fetch")
+	}
+	if slot, synced := syncLiveToStore(m, live, true); synced {
+		ok(fmt.Sprintf("%s is already saved (%s). Its login was updated.", m.name(slot), live.Email))
+		return
+	}
+	if _, saved := saveLiveAsNewSlot(m, live, fl); !saved {
+		os.Exit(1)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -221,49 +295,49 @@ func cmdSwitch(args []string, fl flags) {
 	m := readManifest()
 	slots := m.slots()
 	if len(slots) == 0 {
-		die("No accounts are configured.", "Run:\n\n  claude-account setup\n\nto save your accounts.")
+		die("You haven't saved any accounts yet.", "Start with:\n\n  claude-account setup")
 	}
 	live := getLiveState()
 	cur, hasCur := m.findByIdentity(live.Identity)
-	curLabel := "(not logged in)"
+	curLabel := "(not signed in)"
 	if hasCur {
-		curLabel = m.name(cur)
+		curLabel = fmt.Sprintf("%s (%s)", m.name(cur), live.Email)
 	} else if live.HasCredentials {
-		curLabel = "(unsaved login: " + live.Email + ")"
+		curLabel = live.Email + " (not saved yet)"
 	}
 
 	var target int
 	if len(args) >= 1 {
 		t, okArg := m.resolveSlotArg(args[0])
 		if !okArg {
-			die(fmt.Sprintf("Unknown account '%s'.", args[0]), "Run: claude-account list")
+			die(fmt.Sprintf("There is no saved account called '%s'.", args[0]), "See your accounts with: claude-account list")
 		}
 		target = t
 	} else {
 		title("Claude Account Manager")
-		fmt.Printf("Current account: %s\n\n", curLabel)
+		fmt.Printf("Using now: %s\n\n", curLabel)
 		for _, s := range slots {
 			mark := ""
 			if hasCur && s == cur {
-				mark = " (active)"
+				mark = paint(cGreen, "  (using now)")
 			}
 			fmt.Printf("[%d] %s  %s%s\n", s, m.name(s), m.entry(s).Email, mark)
 		}
 		fmt.Println()
-		answer := strings.TrimSpace(readLine("Select account: "))
+		answer := strings.TrimSpace(readLine("Type the number of the account to use (or press Enter to cancel): "))
 		if answer == "" {
-			fmt.Println("Cancelled.")
+			fmt.Println("Cancelled. Nothing changed.")
 			return
 		}
 		t, okArg := m.resolveSlotArg(answer)
 		if !okArg {
-			die(fmt.Sprintf("Unknown account '%s'.", answer), "")
+			die(fmt.Sprintf("There is no saved account called '%s'.", answer), "")
 		}
 		target = t
 	}
 
 	if !m.has(target) {
-		die(fmt.Sprintf("Account %d is not configured.", target), "Run:\n\n  claude-account setup\n\nto add another account.")
+		die(fmt.Sprintf("Account %d isn't saved.", target), "Add it with:\n\n  claude-account add")
 	}
 	name := m.name(target)
 
@@ -272,33 +346,33 @@ func cmdSwitch(args []string, fl flags) {
 		m.setActive(target)
 		saveManifest(m)
 		fmt.Println()
-		ok(fmt.Sprintf("%s is already the active account (%s).", name, live.Email))
+		ok(fmt.Sprintf("%s is already the account in use (%s).", name, live.Email))
 		return
 	}
 
 	assertNotRunning(fl.force)
 
-	// 1. Save the outgoing login (Claude Code may have refreshed its tokens since we stored it).
+	// 1. Keep the account we are leaving up to date (Claude renews its login while you work).
 	syncLiveToStore(m, live, false)
 
-	// 2. Check the incoming login before touching anything.
+	// 2. Check the account we are changing to before touching anything.
 	blob, err := readSlot(target)
 	if err != nil {
 		die(err.Error(), "")
 	}
-	if !blob.CredInfo.RefreshExpires.IsZero() && blob.CredInfo.RefreshExpires.Before(time.Now()) {
-		die(fmt.Sprintf("%s's saved login has expired (refresh token %s).", name, formatWhen(blob.CredInfo.RefreshExpires)),
-			fmt.Sprintf("Re-authenticate it with:\n\n  claude-account login %d", target))
+	if rx := blob.CredInfo.RefreshExpires; !rx.IsZero() && rx.Before(time.Now()) {
+		die(fmt.Sprintf("The saved login for %s has run out (on %s).", name, rx.Format("2006-01-02")),
+			fmt.Sprintf("Sign in to it again with:\n\n  claude-account login %d", target))
 	}
 
-	// 3. Swap.
+	// 3. Change over.
 	if _, err := setLiveFromSlot(target); err != nil {
-		die("Switching failed: "+err.Error(), "Backups of the previous files are in:\n  "+backupDir())
+		die("Couldn't change account: "+err.Error(), "Nothing was lost. Copies of the old login files are in:\n  "+backupDir())
 	}
 	m.setActive(target)
 	saveManifest(m)
 
-	// 4. Verify with Claude Code itself.
+	// 4. Ask Claude Code itself which account it now sees.
 	st := getAuthStatus("")
 	expected := ""
 	if blob.Profile != nil {
@@ -308,16 +382,20 @@ func cmdSwitch(args []string, fl flags) {
 	if st != nil && st.LoggedIn && (expected == "" || strings.EqualFold(st.Email, expected)) {
 		ok(fmt.Sprintf("Switched to %s (%s)", name, st.Email))
 		if !blob.CredInfo.AccessExpires.IsZero() && blob.CredInfo.AccessExpires.Before(time.Now()) {
-			dim("  (access token is expired; Claude Code refreshes it automatically on next start)")
+			dim("  (Claude will renew this login by itself when it starts)")
 		}
 		return
 	}
-	seen := "no status output"
+	seen := "Claude gave no answer"
 	if st != nil {
-		seen = fmt.Sprintf("loggedIn=%v email=%s", st.LoggedIn, st.Email)
+		if st.LoggedIn {
+			seen = "Claude says it is signed in as " + st.Email
+		} else {
+			seen = "Claude says it is not signed in"
+		}
 	}
-	die(fmt.Sprintf("Files were switched to %s but Claude Code does not report it as logged in (%s).", name, seen),
-		fmt.Sprintf("Try:\n\n  claude-account login %d\n\nBackups of the previous files are in:\n  %s", target, backupDir()))
+	die(fmt.Sprintf("Changed to %s, but something is wrong: %s.", name, seen),
+		fmt.Sprintf("Sign in to it again with:\n\n  claude-account login %d\n\nCopies of the old login files are in:\n  %s", target, backupDir()))
 }
 
 // ---------------------------------------------------------------------------
@@ -338,56 +416,54 @@ func showStatus(brief bool) {
 
 	switch {
 	case hasCur:
-		fmt.Printf("Active account: %s (%s)\n", m.name(cur), live.Email)
+		fmt.Println("Using now: " + paint(cGreen, fmt.Sprintf("%s (%s)", m.name(cur), live.Email)))
 		if !brief {
 			syncLiveToStore(m, live, true)
 		}
 	case live.HasCredentials:
-		fmt.Println(paint(cYellow, fmt.Sprintf("Active account: unsaved login (%s) - run 'claude-account save' to add it", live.Email)))
+		fmt.Println(paint(cYellow, fmt.Sprintf("Using now: %s - not saved yet, run: claude-account fetch", live.Email)))
 	default:
-		fmt.Println(paint(cYellow, "Active account: none (Claude Code is logged out)"))
+		fmt.Println(paint(cYellow, "Using now: nothing (Claude isn't signed in)"))
 	}
 	fmt.Println()
 
 	if len(slots) == 0 {
-		fmt.Println(paint(cYellow, "No accounts configured. Run: claude-account setup"))
+		fmt.Println(paint(cYellow, "No saved accounts yet. Start with: claude-account setup"))
+	} else {
+		fmt.Println("Saved accounts:")
 	}
 	for _, s := range slots {
 		e := m.entry(s)
-		state, detail := "configured", ""
+		state, detail := "ready", ""
 		if blob, err := readSlot(s); err != nil {
-			state, detail = "UNREADABLE", err.Error()
-		} else if rx := blob.CredInfo.RefreshExpires; !rx.IsZero() {
-			switch {
-			case rx.Before(time.Now()):
-				state = "EXPIRED"
-				detail = fmt.Sprintf("login expired %s - run: claude-account login %d", rx.Format("2006-01-02"), s)
-			case rx.Before(time.Now().Add(72 * time.Hour)):
-				detail = fmt.Sprintf("refresh token %s - use it soon or run: claude-account login %d", formatWhen(rx), s)
-			default:
-				detail = "refresh token " + formatWhen(rx)
-			}
+			state, detail = "CAN'T OPEN", err.Error()
+		} else {
+			state, detail = loginLife(s, blob.CredInfo.RefreshExpires)
+		}
+		plan := ""
+		if p := planName(e.SubscriptionType); p != "" {
+			plan = ", " + p
 		}
 		active := ""
 		if hasCur && s == cur {
-			active = "  <- active"
+			active = paint(cGreen, "  <- using now")
 		}
-		sub := ""
-		if e.SubscriptionType != "" {
-			sub = ", " + e.SubscriptionType
+		stateText := state
+		if state != "ready" {
+			stateText = paint(cRed, state)
 		}
-		fmt.Printf("%s: %s  (%s%s)%s\n", m.name(s), state, e.Email, sub, active)
+		fmt.Printf("  [%d] %s: %s  (%s%s)%s\n", s, m.name(s), stateText, e.Email, plan, active)
 		if detail != "" && !brief {
-			dim("    " + detail)
+			dim("      " + detail)
 		}
 	}
 	fmt.Println()
 	if claudeExe != "" {
-		fmt.Printf("Claude Code: detected (%s, %s)\n", claudeVersion, claudeExe)
+		fmt.Printf("Claude Code: found (version %s, %s)\n", claudeVersion, claudeExe)
 	}
 	if !brief {
-		dim("Live credentials: " + liveCredentialDescription())
-		dim("Saved accounts:   " + secrets().Describe())
+		dim("Claude's login is in:      " + liveCredentialDescription())
+		dim("Saved accounts are kept in: " + secrets().Describe())
 	}
 }
 
@@ -397,9 +473,10 @@ func cmdList() {
 	cur, hasCur := m.findByIdentity(live.Identity)
 	slots := m.slots()
 	if len(slots) == 0 {
-		fmt.Println("No accounts configured. Run: claude-account setup")
+		fmt.Println("No saved accounts yet. Start with: claude-account setup")
 		return
 	}
+	fmt.Println("Saved accounts (* = using now):")
 	for _, s := range slots {
 		mark := " "
 		if hasCur && s == cur {
@@ -407,35 +484,39 @@ func cmdList() {
 		}
 		fmt.Printf("%s [%d] %-16s %s\n", mark, s, m.name(s), m.entry(s).Email)
 	}
+	if !hasCur && live.HasCredentials {
+		fmt.Println()
+		fmt.Printf("Claude is signed in to %s, which isn't saved yet. Run: claude-account fetch\n", live.Email)
+	}
 }
 
 // ---------------------------------------------------------------------------
-// login / remove / rename / save / test
+// login / delete / rename / test
 // ---------------------------------------------------------------------------
 
 func cmdLogin(args []string, fl flags) {
 	assertClaudeSupported()
 	m := readManifest()
 	if len(args) < 1 {
-		die("Usage: claude-account login <n> [--email address]", "")
+		die("Which account? For example: claude-account login 2", "")
 	}
 	slot, okArg := m.resolveSlotArg(args[0])
 	if !okArg || slot < 1 || slot > maxSlots {
-		die(fmt.Sprintf("Unknown account '%s'.", args[0]), "")
+		die(fmt.Sprintf("There is no saved account called '%s'.", args[0]), "See your accounts with: claude-account list")
 	}
 	entry := m.entry(slot)
 	name := m.name(slot)
 	live := getLiveState()
 	isActive := live.Identity != "" && entry != nil && entry.Identity == live.Identity
 
-	title("Re-authenticate " + name)
+	title("Sign in again: " + name)
 	if entry != nil && entry.Email != "" {
 		fmt.Printf("  Sign in as %s in the browser window that opens.\n", entry.Email)
 	} else {
 		fmt.Printf("  Sign in with the account you want to save as %s.\n", name)
 	}
-	fmt.Println("  If the browser is signed in to a different Claude account, use a private window.")
-	readLine("  Press Enter to open the login: ")
+	fmt.Println("  If the browser signs you in to a different Claude account, use a private window.")
+	readLine("  Press Enter to open the sign-in page: ")
 	email := fl.email
 	if email == "" && entry != nil {
 		email = entry.Email
@@ -448,82 +529,66 @@ func cmdLogin(args []string, fl flags) {
 	id := identityOf(prof)
 	if entry != nil && entry.Identity != "" && id != entry.Identity && !fl.force {
 		die(fmt.Sprintf("You signed in as %s, but %s is %s.", prof.Email, name, entry.Email),
-			fmt.Sprintf("Sign in with the right account, or use --force to replace %s with %s.", name, prof.Email))
+			fmt.Sprintf("Sign in with the right account. Or, to replace %s with %s, run the same command with --yes.", name, prof.Email))
 	}
 	if other, found := m.findByIdentity(id); found && other != slot {
 		die(fmt.Sprintf("%s is already saved as %s.", prof.Email, m.name(other)), "")
 	}
 	saveSlot(m, slot, cap.Credentials, cap.OAuthJSON, "")
-	ok(fmt.Sprintf("%s re-authenticated (%s)", name, prof.Email))
+	ok(fmt.Sprintf("%s is signed in again (%s)", name, prof.Email))
 	if isActive {
 		assertNotRunning(fl.force)
 		if _, err := setLiveFromSlot(slot); err != nil {
-			die("Saved, but updating the live login failed: "+err.Error(), "")
+			die("Saved, but Claude couldn't be changed over to the new login: "+err.Error(), "")
 		}
 		m.setActive(slot)
 		saveManifest(m)
-		ok(fmt.Sprintf("Live Claude Code login updated to the new %s credentials", name))
+		ok(fmt.Sprintf("Claude is now using the new login for %s", name))
 	}
 }
 
-func cmdRemove(args []string, fl flags) {
+func cmdDelete(args []string, fl flags) {
 	m := readManifest()
 	if len(args) < 1 {
-		die("Usage: claude-account remove <n>", "")
+		die("Which account? For example: claude-account delete 2", "")
 	}
 	slot, okArg := m.resolveSlotArg(args[0])
 	if !okArg || !m.has(slot) {
-		die(fmt.Sprintf("Account '%s' is not configured.", args[0]), "Run: claude-account list")
+		die(fmt.Sprintf("There is no saved account called '%s'.", args[0]), "See your accounts with: claude-account list")
 	}
 	name := m.name(slot)
 	e := m.entry(slot)
-	if !fl.force && !yesNo(fmt.Sprintf("Forget %s (%s)?", name, e.Email), false) {
-		fmt.Println("Cancelled.")
+	if !fl.force && !yesNo(fmt.Sprintf("Delete %s (%s) from the saved list?", name, e.Email), false) {
+		fmt.Println("Cancelled. Nothing changed.")
 		return
 	}
 	removeSlot(m, slot)
-	ok(name + " removed from the account manager.")
+	ok(name + " deleted from the saved list.")
 	if live := getLiveState(); live.Identity != "" && e.Identity == live.Identity {
-		dim("  Claude Code itself is still logged in with it. Use `claude auth logout` if you also want that gone.")
+		dim("  Claude is still signed in to it right now. Run `claude auth logout` if you want to sign out too.")
 	}
 }
 
 func cmdRename(args []string) {
 	m := readManifest()
 	if len(args) < 2 {
-		die("Usage: claude-account rename <n> <new name>", "")
+		die("Give the account number and the new name. For example: claude-account rename 2 Work", "")
 	}
 	slot, okArg := m.resolveSlotArg(args[0])
 	if !okArg || !m.has(slot) {
-		die(fmt.Sprintf("Account '%s' is not configured.", args[0]), "")
+		die(fmt.Sprintf("There is no saved account called '%s'.", args[0]), "See your accounts with: claude-account list")
 	}
 	newName := strings.TrimSpace(strings.Join(args[1:], " "))
 	if newName == "" {
-		die("The new name cannot be empty.", "")
+		die("The new name can't be empty.", "")
 	}
 	if _, err := strconv.Atoi(newName); err == nil {
-		die("The name cannot be just a number (it would clash with slot numbers).", "")
+		die("The name can't be only a number, because numbers are used to pick accounts.", "Try something like: Work, Personal, Team")
 	}
 	old := m.name(slot)
 	m.entry(slot).Name = newName
 	saveManifest(m)
-	ok(fmt.Sprintf("Renamed '%s' to '%s'", old, newName))
-}
-
-func cmdSave(fl flags) {
-	assertClaudeSupported()
-	m := readManifest()
-	live := getLiveState()
-	if !live.HasCredentials || live.Identity == "" {
-		die("Claude Code is not logged in; nothing to save.", "Run: claude auth login   or   claude-account switch")
-	}
-	if slot, synced := syncLiveToStore(m, live, true); synced {
-		ok(fmt.Sprintf("Saved the live login into %s (%s)", m.name(slot), live.Email))
-		return
-	}
-	if _, saved := saveLiveAsNewSlot(m, live, fl); !saved {
-		os.Exit(1)
-	}
+	ok(fmt.Sprintf("Renamed '%s' to '%s'. You can now run: claude-account switch %s", old, newName, newName))
 }
 
 func cmdTest() {
@@ -531,21 +596,21 @@ func cmdTest() {
 	m := readManifest()
 	live := getLiveState()
 	cur, hasCur := m.findByIdentity(live.Identity)
-	label := "the current login"
+	label := "the account in use"
 	if hasCur {
 		label = m.name(cur)
 	}
 	if !live.HasCredentials {
-		die("Claude Code is not logged in.", "Run: claude-account switch   or   claude-account setup")
+		die("Claude isn't signed in to any account.", "Pick one with: claude-account switch")
 	}
-	fmt.Printf("Sending a one-line test prompt as %s (%s)...\n", label, live.Email)
+	fmt.Printf("Sending one tiny test message as %s (%s)...\n", label, live.Email)
 	r := runClaude([]string{"-p", "Reply with the single word OK and nothing else.", "--max-turns", "1"}, nil, false)
 	out := strings.TrimSpace(r.out)
 	if r.exit == 0 && out != "" {
-		ok(fmt.Sprintf("%s works. Reply: %s", label, out))
+		ok(fmt.Sprintf("%s works. Claude replied: %s", label, out))
 		return
 	}
-	hint := "If the message above mentions authentication or an expired token, re-authenticate with:\n\n  claude-account login " + strconv.Itoa(cur) +
-		"\n\nIf it mentions a usage limit, switch to another account:\n\n  claude-account switch"
-	die(fmt.Sprintf("%s did not work (exit code %d).", label, r.exit), hint)
+	hint := "If the message above talks about signing in or an expired login, sign in again with:\n\n  claude-account login " + strconv.Itoa(cur) +
+		"\n\nIf it talks about a usage limit, change to another account:\n\n  claude-account switch"
+	die(fmt.Sprintf("%s didn't work (Claude exited with code %d).", label, r.exit), hint)
 }

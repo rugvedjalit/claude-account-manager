@@ -38,7 +38,7 @@ func (s secretToolStore) Put(slot int, data []byte) error {
 	cmd := exec.Command("secret-tool", args...)
 	cmd.Stdin = bytes.NewReader(data)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		warn("Secret Service write failed (" + string(bytes.TrimSpace(out)) + "); storing as a 0600 file instead.")
+		warn("Couldn't save to your keyring (" + string(bytes.TrimSpace(out)) + "), so it was saved in a private file instead.")
 		return s.fallback.Put(slot, data)
 	}
 	_ = s.fallback.Delete(slot)
@@ -59,7 +59,7 @@ func (s secretToolStore) Delete(slot int) error {
 	return nil
 }
 
-func (secretToolStore) Describe() string { return "Linux Secret Service via secret-tool" }
+func (secretToolStore) Describe() string { return "your Linux keyring (Secret Service)" }
 
 func newSecretStore() secretStore {
 	if secretToolWorks() {

@@ -64,7 +64,7 @@ func storeDir() string {
 	}
 }
 
-func accountsDir() string { return filepath.Join(storeDir(), "accounts") }
-func backupDir() string   { return filepath.Join(storeDir(), "backups") }
-func tmpRoot() string     { return filepath.Join(storeDir(), "tmp") }
+func accountsDir() string  { return filepath.Join(storeDir(), "accounts") }
+func backupDir() string    { return filepath.Join(storeDir(), "backups") }
+func tmpRoot() string      { return filepath.Join(storeDir(), "tmp") }
 func manifestPath() string { return filepath.Join(storeDir(), "config.json") }

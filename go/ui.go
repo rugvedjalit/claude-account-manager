@@ -73,6 +73,24 @@ func yesNo(prompt string, def bool) bool {
 	}
 }
 
+// formatLeft turns a duration into "12 days", "1 day" or "5 hours".
+func formatLeft(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	if days := int(d.Hours() / 24); days >= 1 {
+		if days == 1 {
+			return "1 day"
+		}
+		return fmt.Sprintf("%d days", days)
+	}
+	hours := int(math.Ceil(d.Hours()))
+	if hours <= 1 {
+		return "1 hour"
+	}
+	return fmt.Sprintf("%d hours", hours)
+}
+
 func formatWhen(t time.Time) string {
 	if t.IsZero() {
 		return "unknown"

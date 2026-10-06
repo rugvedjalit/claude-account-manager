@@ -56,7 +56,7 @@ func (dpapiStore) path(slot int) string {
 func (d dpapiStore) Put(slot int, data []byte) error {
 	enc, err := dpapi(procProtectData, data)
 	if err != nil {
-		return fmt.Errorf("DPAPI encryption failed: %w", err)
+		return fmt.Errorf("Windows encryption failed: %w", err)
 	}
 	if err := os.MkdirAll(accountsDir(), 0o700); err != nil {
 		return err
@@ -67,11 +67,11 @@ func (d dpapiStore) Put(slot int, data []byte) error {
 func (d dpapiStore) Get(slot int) ([]byte, error) {
 	b, err := os.ReadFile(d.path(slot))
 	if err != nil {
-		return nil, errors.New("no saved credentials (missing " + d.path(slot) + ")")
+		return nil, errors.New("its saved file is missing (" + d.path(slot) + ")")
 	}
 	plain, err := dpapi(procUnprotectData, b)
 	if err != nil {
-		return nil, errors.New("DPAPI cannot decrypt it; the data belongs to a different Windows user or machine")
+		return nil, errors.New("it can't be unlocked. It was saved by a different Windows user or on another computer")
 	}
 	return plain, nil
 }
@@ -84,6 +84,8 @@ func (d dpapiStore) Delete(slot int) error {
 	return os.Remove(p)
 }
 
-func (dpapiStore) Describe() string { return "Windows DPAPI, current user (" + accountsDir() + ")" }
+func (dpapiStore) Describe() string {
+	return "Windows encryption (DPAPI), only your Windows user can open them (" + accountsDir() + ")"
+}
 
 func newSecretStore() secretStore { return dpapiStore{} }

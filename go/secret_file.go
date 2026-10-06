@@ -25,7 +25,7 @@ func (f fileSecretStore) Put(slot int, data []byte) error {
 func (f fileSecretStore) Get(slot int) ([]byte, error) {
 	b, err := os.ReadFile(f.path(slot))
 	if err != nil {
-		return nil, fmt.Errorf("no saved credentials (missing %s)", f.path(slot))
+		return nil, fmt.Errorf("its saved file is missing (%s)", f.path(slot))
 	}
 	return b, nil
 }
@@ -38,4 +38,6 @@ func (f fileSecretStore) Delete(slot int) error {
 	return os.Remove(p)
 }
 
-func (fileSecretStore) Describe() string { return "file with mode 0600 (no OS keyring available)" }
+func (fileSecretStore) Describe() string {
+	return "a private file only you can read (no keyring found on this computer)"
+}

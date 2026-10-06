@@ -38,7 +38,7 @@ func readManifest() *manifest {
 		return m
 	}
 	if err := json.Unmarshal(b, m); err != nil {
-		die("The account manager config is corrupt: "+manifestPath(), "Delete it and run: claude-account setup")
+		die("The account list file is damaged: "+manifestPath(), "Delete that file and run: claude-account setup")
 	}
 	if m.Accounts == nil {
 		m.Accounts = map[string]*accountEntry{}
@@ -48,11 +48,11 @@ func readManifest() *manifest {
 
 func saveManifest(m *manifest) {
 	if err := os.MkdirAll(storeDir(), 0o700); err != nil {
-		die("Cannot create "+storeDir()+": "+err.Error(), "")
+		die("Can't create the folder "+storeDir()+": "+err.Error(), "")
 	}
 	b, _ := json.MarshalIndent(m, "", "  ")
 	if err := writeFileAtomic(manifestPath(), b, 0o600); err != nil {
-		die("Cannot write "+manifestPath()+": "+err.Error(), "")
+		die("Can't save the account list "+manifestPath()+": "+err.Error(), "")
 	}
 }
 
@@ -139,12 +139,12 @@ func nowISO() string { return time.Now().Format(time.RFC3339) }
 func saveSlot(m *manifest, slot int, credText, oauthJSON, name string) {
 	info := parseCredentials(credText)
 	if info == nil {
-		die("Credential data is not in the expected Claude Code format (claudeAiOauth.accessToken/refreshToken).", "")
+		die("Claude's login data isn't in the format this tool expects, so it was not saved.", "Update this tool, or report it at https://github.com/rugvedjalit/claude-account-manager/issues")
 	}
 	prof := parseProfile(oauthJSON)
 	payload, _ := json.Marshal(slotPayload{Format: 1, Credentials: credText, OAuthJSON: oauthJSON, SavedAt: nowISO()})
 	if err := secrets().Put(slot, payload); err != nil {
-		die(fmt.Sprintf("Cannot save account %d: %v", slot, err), "")
+		die(fmt.Sprintf("Couldn't save account %d: %v", slot, err), "")
 	}
 	existing := m.entry(slot)
 	e := &accountEntry{SubscriptionType: info.SubscriptionType, UpdatedAt: nowISO(), SavedAt: nowISO()}
@@ -175,7 +175,7 @@ func readSlot(slot int) (*slotData, error) {
 	}
 	var p slotPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, fmt.Errorf("saved data for account %d is corrupt. Run: claude-account login %d", slot, slot)
+		return nil, fmt.Errorf("the saved login for account %d is damaged. Sign in to it again with: claude-account login %d", slot, slot)
 	}
 	return &slotData{Credentials: p.Credentials, OAuthJSON: p.OAuthJSON, SavedAt: p.SavedAt,
 		CredInfo: parseCredentials(p.Credentials), Profile: parseProfile(p.OAuthJSON)}, nil
@@ -198,7 +198,7 @@ func syncLiveToStore(m *manifest, live *liveState, quiet bool) (int, bool) {
 	slot, found := m.findByIdentity(live.Identity)
 	if !found {
 		if !quiet {
-			warn(fmt.Sprintf("The current Claude Code login (%s) is not a saved account, so it was not saved. Run 'claude-account save' to add it.", live.Email))
+			warn(fmt.Sprintf("Claude is signed in to %s, which isn't saved yet. To keep it, run: claude-account fetch", live.Email))
 		}
 		return 0, false
 	}

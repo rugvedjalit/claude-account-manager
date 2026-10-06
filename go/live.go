@@ -188,7 +188,7 @@ func setLiveFromSlot(slot int) (*slotData, error) {
 	backupLiveFile(liveClaudeJSON, "pre-switch")
 	backupLiveFile(liveCredPath, "pre-switch")
 	if err := writeLiveCredentials(blob.Credentials); err != nil {
-		return nil, fmt.Errorf("writing credentials: %w", err)
+		return nil, fmt.Errorf("couldn't write the login: %w", err)
 	}
 	if blob.OAuthJSON != "" {
 		text := "{\n}\n"
@@ -200,7 +200,7 @@ func setLiveFromSlot(slot int) (*slotData, error) {
 			return nil, err
 		}
 		if !json.Valid([]byte(updated)) { // must still parse before we commit it
-			return nil, fmt.Errorf("refusing to write %s: result would not be valid JSON", liveClaudeJSON)
+			return nil, fmt.Errorf("stopped before changing %s because the result would be damaged; nothing was changed", liveClaudeJSON)
 		}
 		if err := writeFileAtomic(liveClaudeJSON, []byte(updated), 0o600); err != nil {
 			return nil, err

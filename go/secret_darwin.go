@@ -23,7 +23,7 @@ func (k keychainStore) Put(slot int, data []byte) error {
 	cmd := exec.Command("security", "add-generic-password", "-U", "-a", slotAccount(slot), "-s", camKeychainService,
 		"-l", fmt.Sprintf("Claude Account Manager (account %d)", slot), "-X", hex.EncodeToString(data))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		warn("Keychain write failed (" + strings.TrimSpace(string(out)) + "); storing as a 0600 file instead.")
+		warn("Couldn't save to the Keychain (" + strings.TrimSpace(string(out)) + "), so it was saved in a private file instead.")
 		return k.fallback.Put(slot, data)
 	}
 	_ = k.fallback.Delete(slot) // no stale plaintext copy
@@ -44,7 +44,9 @@ func (k keychainStore) Delete(slot int) error {
 	return nil
 }
 
-func (keychainStore) Describe() string { return "macOS Keychain (service " + camKeychainService + ")" }
+func (keychainStore) Describe() string {
+	return "the macOS Keychain (look for \"" + camKeychainService + "\")"
+}
 
 func newSecretStore() secretStore {
 	if _, err := exec.LookPath("security"); err != nil {
